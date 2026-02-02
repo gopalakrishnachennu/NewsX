@@ -8,8 +8,7 @@ import {
     ReactNode,
 } from "react";
 import { User as FirebaseUser, onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore"; // Import setDoc statically
-import { auth, db } from "@/lib/firebase";
+import { auth } from "@/lib/firebase";
 import { Role, User as AppUser } from "@/types";
 
 interface AuthContextType {
@@ -17,6 +16,7 @@ interface AuthContextType {
     appUser: AppUser | null;
     loading: boolean;
     role: Role | null;
+    status: string; // Debug status
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -24,6 +24,7 @@ const AuthContext = createContext<AuthContextType>({
     appUser: null,
     loading: true,
     role: null,
+    status: "Initializing...",
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -32,49 +33,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<FirebaseUser | null>(null);
     const [appUser, setAppUser] = useState<AppUser | null>(null);
     const [loading, setLoading] = useState(true);
+    const [status, setStatus] = useState("Initializing Auth...");
 
     useEffect(() => {
         let mounted = true;
 
-        // Safety timeout to prevent infinite loading
         const safetyTimeout = setTimeout(() => {
             if (mounted && loading) {
-                console.warn("Auth check timed out, forcing loading false");
+                console.warn("Auth check timed out");
+                setStatus("Auth Timed Out (Check Console)");
+                // Don't force loading false yet, let the user see the timeout message?
+                // Or force it:
                 setLoading(false);
             }
-        }, 8000); // 8 seconds
+        }, 10000); // 10s
 
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
             if (!mounted) return;
+            setStatus("Auth State Changed...");
             setUser(firebaseUser);
 
             if (firebaseUser) {
                 try {
-                    const userRef = doc(db, "users", firebaseUser.uid);
-                    const userDoc = await getDoc(userRef);
+                    setStatus("Fetching User Profile...");
+                    const token = await firebaseUser.getIdToken();
+                    const response = await fetch("/api/users/me", {
+                        method: "GET",
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    });
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(errorText || "Failed to fetch user profile");
+                    }
+
+                    const data = await response.json();
+                    const lastLoginMs = typeof data?.user?.lastLogin === "number"
+                        ? data.user.lastLogin
+                        : Date.now();
 
                     if (mounted) {
-                        if (userDoc.exists()) {
-                            setAppUser(userDoc.data() as AppUser);
-                        } else {
-                            // First time login: Create Owner
-                            const newUser: AppUser = {
-                                uid: firebaseUser.uid,
-                                email: firebaseUser.email || "",
-                                role: 'owner',
-                                lastLogin: new Date(),
-                            };
-                            await setDoc(userRef, newUser);
-                            if (mounted) setAppUser(newUser);
-                        }
+                        setStatus("Profile Loaded");
+                        setAppUser({
+                            uid: data.user.uid,
+                            email: data.user.email || "",
+                            role: data.user.role as Role,
+                            lastLogin: new Date(lastLoginMs),
+                        });
                     }
-                } catch (error) {
+                } catch (error: any) {
                     console.error("Error fetching/creating user role", error);
-                    // On error, we might want to setAppUser(null) or a default "guest"?
-                    // For now, let's leave it null which might redirect to unauthorized
+                    setStatus(`Error: ${error.message}`);
                 }
             } else {
                 if (mounted) setAppUser(null);
+                setStatus("No User");
             }
 
             if (mounted) setLoading(false);
@@ -93,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         appUser,
         role: appUser?.role || null,
         loading,
+        status,
     };
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

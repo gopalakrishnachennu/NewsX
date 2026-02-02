@@ -1,57 +1,53 @@
 "use client";
 
-import { useAuth } from "@/components/providers/AuthProvider";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-import { Loader2 } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { LayoutDashboard, Rss, ScrollText } from "lucide-react";
+
+const NAV_ITEMS = [
+    { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/admin/feeds", label: "Feeds", icon: Rss },
+    { href: "/admin/logs", label: "Logs", icon: ScrollText },
+];
 
 export default function AdminLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
-    const { user, role, loading } = useAuth();
-    const router = useRouter();
-
-    useEffect(() => {
-        if (!loading) {
-            if (!user) {
-                router.push("/login?redirect=/admin");
-            } else if (!['owner', 'editor', 'analyst'].includes(role || '')) {
-                // Simple role check, can be more robust
-                router.push("/unauthorized");
-            }
-        }
-    }, [user, role, loading, router]);
-
-    if (loading) {
-        return (
-            <div className="flex h-screen w-full items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
-            </div>
-        );
-    }
-
-    if (!user || !role) {
-        return null; // Will redirect
-    }
+    const pathname = usePathname();
 
     return (
         <div className="flex min-h-screen flex-col bg-gray-50 text-gray-900">
             <header className="border-b bg-white px-6 py-4 shadow-sm">
                 <div className="flex items-center justify-between">
-                    <h1 className="text-xl font-bold tracking-tight">Admin Control Room</h1>
-                    <div className="flex items-center gap-4">
-                        <span className="text-sm text-gray-500">
-                            {user.email} ({role})
-                        </span>
-                        {/* Add Logout button here */}
+                    <div className="flex items-center gap-8">
+                        <h1 className="text-xl font-bold tracking-tight">NewsX Admin</h1>
+                        <nav className="flex items-center gap-1">
+                            {NAV_ITEMS.map((item) => {
+                                const isActive = pathname === item.href ||
+                                    (item.href !== "/admin" && pathname?.startsWith(item.href));
+                                return (
+                                    <Link
+                                        key={item.href}
+                                        href={item.href}
+                                        className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${isActive
+                                                ? "bg-gray-100 text-gray-900"
+                                                : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                                            }`}
+                                    >
+                                        <item.icon className="h-4 w-4" />
+                                        {item.label}
+                                    </Link>
+                                );
+                            })}
+                        </nav>
                     </div>
+                    <span className="text-sm text-gray-500">Internal Console</span>
                 </div>
             </header>
-            <main className="flex-1 p-6">
-                {children}
-            </main>
+            <main className="flex-1 p-6">{children}</main>
         </div>
     );
 }
+

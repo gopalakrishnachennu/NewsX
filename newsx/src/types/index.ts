@@ -10,7 +10,7 @@ export interface User {
 export type ArticleLifecycle = 'queued' | 'processed' | 'clustered' | 'published' | 'archived' | 'blocked';
 
 export interface Article {
-  id: string; 
+  id: string;
   title: string;
   url: string;
   sourceId: string;
@@ -29,6 +29,18 @@ export interface Article {
     companies: string[];
     locations: string[];
   };
+  // Ingestion tracking
+  fetchError?: string;
+  lastFetchedAt?: Date;
+  processingLock?: {
+    worker: string;
+    lockedAt: Date;
+  };
+  // Content enrichment
+  readingTime?: number; // minutes
+  keywords?: string[];
+  author?: string;
+  category?: string;
 }
 
 export interface Cluster {
@@ -44,18 +56,35 @@ export interface Cluster {
   updatedAt: Date;
 }
 
+export type FeedHealthStatus = 'healthy' | 'warning' | 'error' | 'disabled';
+
+export interface FeedHealth {
+  status: FeedHealthStatus;
+  reliabilityScore: number;
+  lastCheck: Date;
+  lastSuccess?: Date;
+  errorCount24h: number;
+  consecutiveFailures: number;
+  lastError?: string;
+  avgResponseTime?: number;
+}
+
 export interface Feed {
   id: string;
   sourceId: string;
   url: string;
   type: 'rss' | 'atom' | 'sitemap' | 'html';
   active: boolean;
-  health: {
-    status: 'healthy' | 'warning' | 'error';
-    reliabilityScore: number;
-    lastCheck: Date;
-    errorCount24h: number;
-  };
+  health: FeedHealth;
+  // Advanced Fetching
+  fetchIntervalMinutes?: number;
+  lastFetchedAt?: any; // Firestore Timestamp
+  lastSeenArticleDate?: any; // Firestore Timestamp
+  updatedAt?: any;
+  // Smart Caching
+  lastContentHash?: string;
+  lastETag?: string;
+  lastModified?: string;
 }
 
 export interface QueueJob {
@@ -66,3 +95,4 @@ export interface QueueJob {
   attempts: number;
   nextRunAt: Date;
 }
+

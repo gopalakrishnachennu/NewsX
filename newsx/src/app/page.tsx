@@ -10,11 +10,8 @@ export default function Home() {
           <span className="text-xl font-bold tracking-tight">NewsX</span>
         </div>
         <div className="flex items-center gap-4">
-          <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-blue-600">
-            Sign In
-          </Link>
           <Link
-            href="/login"
+            href="/admin"
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
             Go to Console
@@ -36,7 +33,7 @@ export default function Home() {
           </p>
           <div className="flex items-center justify-center gap-4 pt-4">
             <Link
-              href="/login"
+              href="/admin"
               className="group flex items-center gap-2 rounded-md bg-gray-900 px-6 py-3 text-base font-semibold text-white hover:bg-gray-800"
             >
               Access Admin Console

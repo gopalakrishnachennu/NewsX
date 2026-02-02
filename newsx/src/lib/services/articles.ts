@@ -68,6 +68,9 @@ export const ArticleService = {
 
     async processArticle(id: string, content: string, title: string) {
         const { QualityFilters } = await import("../quality");
+        const { logger } = await import("../logger");
+
+        logger.info("Processing article", { articleId: id, titleLength: title.length });
 
         // Check quality
         const clickbaitCheck = QualityFilters.isClickbait(title);
@@ -77,6 +80,13 @@ export const ArticleService = {
         const isLowQuality = clickbaitCheck.isClickbait || !wordCountCheck || prCheck;
         const qualityScore = 100 - (clickbaitCheck.score) - (prCheck ? 50 : 0) - (wordCountCheck ? 0 : 30);
 
+        if (isLowQuality) {
+            logger.warn("Low quality article detected", {
+                articleId: id,
+                metrics: { clickbait: clickbaitCheck.isClickbait, wordCount: wordCountCheck, pr: prCheck }
+            });
+        }
+
         const docRef = doc(db, COLLECTION, id);
         await updateDoc(docRef, {
             qualityScore: Math.max(0, qualityScore),
@@ -84,6 +94,9 @@ export const ArticleService = {
             updatedAt: Timestamp.now()
         });
 
+        logger.info("Article processed", { articleId: id, qualityScore, status: isLowQuality ? 'blocked' : 'processed' });
+
         return { isLowQuality, qualityScore };
     }
 };
+
