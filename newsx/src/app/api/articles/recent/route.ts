@@ -1,36 +1,32 @@
 import { NextResponse } from "next/server";
-import { dbAdmin } from "@/lib/firebase-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const COLLECTION = "articles";
+import { unstable_cache } from "next/cache";
+
+// Core fetch logic (SQLite)
+async function fetchRecentArticles(limit: number) {
+    const { ArticleRepository } = await import("@/lib/repositories/articles");
+    return ArticleRepository.findRecent(limit);
+}
+
+// Cached wrapper
+const getCachedArticles = unstable_cache(
+    fetchRecentArticles,
+    ["recent-articles"], // Cache Key
+    { revalidate: 60 }   // TTL: 60 seconds
+);
 
 export async function GET(request: Request) {
     const url = new URL(request.url);
     const limit = Math.min(parseInt(url.searchParams.get("limit") || "20"), 50);
+    const force = url.searchParams.get("force") === "true";
 
     try {
-        const db = dbAdmin();
-        // Use createdAt to avoid needing composite index
-        const snapshot = await db.collection(COLLECTION).orderBy("createdAt", "desc").limit(limit).get();
-        const articles = snapshot.docs.map((doc) => {
-            const data = doc.data() as any;
-            return {
-                id: doc.id,
-                title: data?.title || "",
-                url: data?.url || "",
-                sourceId: data?.sourceId || "",
-                image: data?.image || null,
-                summary: data?.summary || null,
-                author: data?.author || null,
-                publishedAt: data?.publishedAt || null,
-                lifecycle: data?.lifecycle || "queued",
-                qualityScore: data?.qualityScore || null,
-                fetchError: data?.fetchError || null,
-                createdAt: data?.createdAt?.toMillis?.() || Date.now(),
-            };
-        });
+        const articles = force
+            ? await fetchRecentArticles(limit)
+            : await getCachedArticles(limit);
 
         return NextResponse.json({ articles });
     } catch (error: any) {
@@ -38,4 +34,3 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: error.message, articles: [] }, { status: 500 });
     }
 }
-

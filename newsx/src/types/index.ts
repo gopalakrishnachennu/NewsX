@@ -85,6 +85,7 @@ export interface Feed {
   lastContentHash?: string;
   lastETag?: string;
   lastModified?: string;
+  recentHashes?: string[]; // Optimization: hash of last 50-100 article URLs to skip DB checks
 }
 
 export interface QueueJob {

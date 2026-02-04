@@ -55,6 +55,14 @@ export function initAdmin() {
 }
 
 export const dbAdmin = () => {
+    if (process.env.FIREBASE_FEEDS_BACKUP_ONLY === "true") {
+        throw new Error("Firebase DB access disabled (feeds backup only)");
+    }
+    initAdmin();
+    return getFirestore();
+};
+
+export const dbAdminFeedsBackup = () => {
     initAdmin();
     return getFirestore();
 };

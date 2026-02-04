@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { RefreshCw, AlertTriangle, Info, AlertCircle, Bug } from "lucide-react";
+import { useSettings } from "@/components/providers/SettingsProvider";
 
 type LogEntry = {
     id: string;
@@ -14,6 +15,7 @@ type LogEntry = {
 export default function LogsPage() {
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [loading, setLoading] = useState(true);
+    const { timeZone, locale } = useSettings();
 
     const loadLogs = async () => {
         setLoading(true);
@@ -70,7 +72,16 @@ export default function LogsPage() {
             const date = ts._seconds
                 ? new Date(ts._seconds * 1000)
                 : new Date(ts);
-            return date.toLocaleString();
+            return new Intl.DateTimeFormat(locale || "en-IN", {
+                timeZone: timeZone || "Asia/Kolkata",
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+                hour12: true,
+                timeZoneName: "short",
+            }).format(date);
         } catch {
             return "-";
         }

@@ -8,6 +8,8 @@ interface LogEntry {
     error?: Error | unknown;
 }
 
+import { LogService, LogLevel as ServiceLogLevel } from "./services/logs";
+
 class Logger {
     private formatError(error: unknown): string {
         if (error instanceof Error) {
@@ -17,27 +19,16 @@ class Logger {
     }
 
     private log(level: LogLevel, message: string, context?: Record<string, any>, error?: unknown) {
-        const entry: LogEntry = {
-            level,
-            message,
-            timestamp: new Date().toISOString(),
-            context,
-        };
+        // Fire and forget LogService
+        // We match LogLevel types or cast if needed
+        const serviceLevel = level as ServiceLogLevel;
 
-        if (error) {
-            entry.error = this.formatError(error);
-        }
+        const contextWithErr = error ? { ...context, error: this.formatError(error) } : context;
 
-        // In local dev, we might want pretty printing, but for "advanced system" we stick to JSON
-        // or use a conditional. For this user request, robust JSON is best.
-        if (process.env.NODE_ENV === 'development') {
-            // Pretty print for readability in console during dev
-            const color = level === 'error' ? '\x1b[31m' : level === 'warn' ? '\x1b[33m' : '\x1b[32m';
-            console.log(`${color}[${level.toUpperCase()}] \x1b[0m ${message}`, context || '', error || '');
-        } else {
-            // Production JSON format
-            console.log(JSON.stringify(entry));
-        }
+        // This handles both Console (Vercel) and SQLite (Local)
+        LogService.write(serviceLevel, message, contextWithErr).catch(e => {
+            console.error("Logger failed to write to LogService", e);
+        });
     }
 
     debug(message: string, context?: Record<string, any>) {

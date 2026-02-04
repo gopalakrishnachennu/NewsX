@@ -2,8 +2,10 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { HeroCard, NewsCard, SkeletonCard, NewsArticle } from "@/components/news/NewsCard";
-import { RefreshCw, Newspaper, TrendingUp, Zap, ArrowUpDown, Clock, SortAsc, SortDesc, Star, Flame, Globe } from "lucide-react";
+import { SearchOverlay } from "@/components/search/SearchOverlay";
+import { RefreshCw, Newspaper, TrendingUp, Zap, ArrowUpDown, Clock, SortAsc, SortDesc, Star, Flame, Globe, Search } from "lucide-react";
 import { sortArticles, SortOption } from "@/lib/utils/sorting";
+import { useSettings } from "@/components/providers/SettingsProvider";
 
 const CATEGORIES = [
     { id: "all", label: "For You", icon: Zap },
@@ -23,18 +25,21 @@ const SORT_OPTIONS = [
     { id: "z-a", label: "Z → A", icon: SortDesc },
 ];
 
-const LIMIT_OPTIONS = [30, 50, 100, 200];
+const LIMIT_OPTIONS = [30, 50, 100, 200, 500, 1000, 2000];
 
 export default function NewsPage() {
     const [articles, setArticles] = useState<NewsArticle[]>([]);
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [loading, setLoading] = useState(true);
     const [activeCategory, setActiveCategory] = useState("all");
     const [sortBy, setSortBy] = useState("latest");
     const [showSortDropdown, setShowSortDropdown] = useState(false);
-    /* ... imports ... */
+    const { defaultNewsLimit } = useSettings();
     const [limit, setLimit] = useState(100);
     const [hasMore, setHasMore] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
+    const [updating, setUpdating] = useState(false);
+    const [updateStatus, setUpdateStatus] = useState<string | null>(null);
 
     const loadArticles = async (newLimit?: number) => {
         setLoading(true);
@@ -52,6 +57,21 @@ export default function NewsPage() {
             console.error("Failed to load articles", error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const updateFeeds = async (force = false) => {
+        if (updating) return;
+        setUpdating(true);
+        setUpdateStatus(force ? "Updating feeds..." : "Syncing feeds...");
+        try {
+            await fetch(`/api/cron/sweep-all${force ? "?force=true" : ""}`, { method: "POST" });
+            await fetch(`/api/articles/process-queue?limit=${force ? 50 : 10}`, { method: "POST" });
+        } catch (e) {
+            console.error("Failed to update feeds", e);
+        } finally {
+            setUpdating(false);
+            setTimeout(() => setUpdateStatus(null), 1500);
         }
     };
 
@@ -79,6 +99,20 @@ export default function NewsPage() {
         void loadArticles();
     }, []);
 
+    useEffect(() => {
+        if (!defaultNewsLimit) return;
+        setLimit(defaultNewsLimit);
+        void loadArticles(defaultNewsLimit);
+    }, [defaultNewsLimit]);
+
+    // Background refresh (non-blocking) every 15 minutes
+    useEffect(() => {
+        const interval = setInterval(() => {
+            void updateFeeds(false);
+        }, 15 * 60 * 1000);
+        return () => clearInterval(interval);
+    }, []);
+
     // Sort articles using robust sorting utility
     const sortedArticles = useMemo(() => {
         return sortArticles(articles, sortBy as SortOption);
@@ -92,6 +126,12 @@ export default function NewsPage() {
 
     return (
         <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+            <SearchOverlay
+                isOpen={isSearchOpen}
+                onClose={() => setIsSearchOpen(false)}
+                localArticles={articles}
+            />
+
             {/* Header */}
             <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-lg border-b border-gray-200/50">
                 <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -108,7 +148,27 @@ export default function NewsPage() {
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 sm:gap-3">
+                            {/* Viral Mode */}
+                            <a
+                                href="/viral"
+                                className="flex items-center gap-2 rounded-full bg-rose-50 border border-rose-100 px-3 sm:px-4 py-2 text-sm font-bold text-rose-600 transition-all hover:bg-rose-100 hover:shadow-sm"
+                            >
+                                <Flame className="h-4 w-4" />
+                                <span className="hidden sm:inline">Viral</span>
+                            </a>
+
+                            {/* Search Trigger */}
+                            <button
+                                onClick={() => setIsSearchOpen(true)}
+                                className="flex items-center gap-2 rounded-full bg-white border border-gray-200 px-3 sm:px-4 py-2 text-sm font-medium text-gray-600 transition-all hover:border-blue-300 hover:text-blue-600 hover:shadow-sm"
+                            >
+                                <Search className="h-4 w-4" />
+                                <span className="hidden sm:inline">Search</span>
+                            </button>
+
+                            <div className="h-6 w-px bg-gray-200 mx-1"></div>
+
                             {/* Sort Dropdown */}
                             <div className="relative">
                                 <button
@@ -148,6 +208,15 @@ export default function NewsPage() {
                             </div>
 
                             <button
+                                onClick={() => updateFeeds(true)}
+                                disabled={updating}
+                                className="flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-blue-700 disabled:opacity-50"
+                            >
+                                <Zap className={`h-4 w-4 ${updating ? "animate-spin" : ""}`} />
+                                <span className="hidden md:inline">Update Feeds</span>
+                            </button>
+
+                            <button
                                 onClick={() => loadArticles()}
                                 disabled={loading}
                                 className="flex items-center gap-2 rounded-full bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-200 disabled:opacity-50"
@@ -183,6 +252,11 @@ export default function NewsPage() {
 
             {/* Main Content */}
             <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+                {updateStatus && (
+                    <div className="mb-4 rounded-lg bg-blue-50 text-blue-700 px-4 py-2 text-sm">
+                        {updateStatus}
+                    </div>
+                )}
                 {loading ? (
                     <div className="space-y-4">
                         <div className="h-64 md:h-96 animate-pulse rounded-2xl bg-gray-200" />
@@ -279,4 +353,3 @@ export default function NewsPage() {
         </div>
     );
 }
-

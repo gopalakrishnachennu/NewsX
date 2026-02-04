@@ -20,10 +20,11 @@ export function RecentArticles() {
     const [processing, setProcessing] = useState(false);
     const [processResult, setProcessResult] = useState<string | null>(null);
 
-    const loadArticles = async () => {
+    const loadArticles = async (force = false) => {
         setLoading(true);
         try {
-            const response = await fetch(`/api/articles/recent?limit=20&ts=${Date.now()}`, {
+            const forceParam = force ? "&force=true" : "";
+            const response = await fetch(`/api/articles/recent?limit=20&ts=${Date.now()}${forceParam}`, {
                 cache: "no-store",
             });
             if (response.ok) {
@@ -59,7 +60,7 @@ export function RecentArticles() {
     };
 
     useEffect(() => {
-        void loadArticles();
+        void loadArticles(false);
     }, []);
 
     const getLifecycleIcon = (lifecycle: string) => {
@@ -107,7 +108,7 @@ export function RecentArticles() {
                         Process Queue
                     </button>
                     <button
-                        onClick={loadArticles}
+                        onClick={() => loadArticles(true)}
                         disabled={loading}
                         className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                     >

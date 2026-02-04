@@ -203,18 +203,45 @@ export function extractUnixTimestampFromUrl(url: string): Date | undefined {
 }
 
 /**
+ * Detect "Viral" intent based on Indian social media keywords
+ */
+const VIRAL_KEYWORDS = [
+    "netizens", "viral video", "twitter erupts", "internet reacts",
+    "twitter reacts", "video goes viral", "shocking video",
+    "breaks internet", "trolls", "memes", "instagram reel",
+    "caught on cam", "caught on camera", "watch:",
+    "trending now", "social media", "users react"
+];
+
+export function detectViralIntent(title: string, summary: string): boolean {
+    const text = (title + " " + summary).toLowerCase();
+
+    // 1. Check Keywords
+    const hasViralKeyword = VIRAL_KEYWORDS.some(keyword => text.includes(keyword));
+
+    // 2. Additional heuristics can go here (e.g. strict source check if passed)
+
+    return hasViralKeyword;
+}
+
+/**
  * All-in-one content enrichment
  */
 export interface EnrichedContent {
     readingTime: number;
     summary: string;
     keywords: string[];
+    category?: string;
 }
 
-export function enrichContent(content: string, description?: string): EnrichedContent {
+export function enrichContent(content: string, description?: string, title: string = ""): EnrichedContent {
+    const summary = generateSummary(content, description);
+    const isViral = detectViralIntent(title, summary);
+
     return {
         readingTime: estimateReadingTime(content),
-        summary: generateSummary(content, description),
+        summary: summary,
         keywords: extractKeywords(content, 5),
+        category: isViral ? 'viral' : undefined
     };
 }

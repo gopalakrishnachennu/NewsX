@@ -1,69 +1,33 @@
-import { db } from "@/lib/firebase";
 import { Article, ArticleLifecycle } from "@/types";
-import {
-    collection,
-    doc,
-    getDocs,
-    getDoc,
-    setDoc,
-    updateDoc,
-    query,
-    where,
-    orderBy,
-    limit,
-    Timestamp,
-    addDoc
-} from "firebase/firestore";
-
-const COLLECTION = "articles";
+import { ArticleRepository } from "@/lib/repositories/articles";
+import crypto from "crypto";
 
 export const ArticleService = {
     async getRecent(limitCount = 20) {
-        const q = query(
-            collection(db, COLLECTION),
-            orderBy("publishedAt", "desc"),
-            limit(limitCount)
-        );
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Article));
+        return ArticleRepository.findPublished(limitCount) as unknown as Article[];
     },
 
     async getById(id: string) {
-        const docRef = doc(db, COLLECTION, id);
-        const snapshot = await getDoc(docRef);
-        if (!snapshot.exists()) return null;
-        return { id: snapshot.id, ...snapshot.data() } as Article;
+        return (await ArticleRepository.getById(id)) as unknown as Article | null;
     },
 
     async create(article: Omit<Article, "id">) {
-        // Generate a stable ID if possible, otherwise let Firestore auto-gen typical for simpler usage
-        // For features.md requirement (stable hash), we'd do that before calling this.
-        // For now, using auto-id for speed.
-        const docRef = await addDoc(collection(db, COLLECTION), {
+        const id = crypto.randomUUID();
+        await ArticleRepository.upsert({
+            id,
             ...article,
-            createdAt: Timestamp.now(),
-            updatedAt: Timestamp.now()
+            createdAt: new Date().toISOString(),
+            publishedAt: article.publishedAt ? new Date(article.publishedAt).toISOString() : new Date().toISOString(),
         });
-        return docRef.id;
+        return id;
     },
 
     async updateLifecycle(id: string, lifecycle: ArticleLifecycle) {
-        const docRef = doc(db, COLLECTION, id);
-        await updateDoc(docRef, {
-            lifecycle,
-            updatedAt: Timestamp.now()
-        });
+        await ArticleRepository.updateById(id, { lifecycle });
     },
 
     async getByLifecycle(lifecycle: ArticleLifecycle, limitCount = 20) {
-        const q = query(
-            collection(db, COLLECTION),
-            where("lifecycle", "==", lifecycle),
-            orderBy("publishedAt", "desc"),
-            limit(limitCount)
-        );
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Article));
+        return (await ArticleRepository.findByLifecycle(lifecycle, limitCount)) as unknown as Article[];
     },
 
     async processArticle(id: string, content: string, title: string) {
@@ -87,11 +51,9 @@ export const ArticleService = {
             });
         }
 
-        const docRef = doc(db, COLLECTION, id);
-        await updateDoc(docRef, {
-            qualityScore: Math.max(0, qualityScore),
-            lifecycle: isLowQuality ? 'blocked' : 'processed',
-            updatedAt: Timestamp.now()
+        await ArticleRepository.updateById(id, {
+            quality_score: Math.max(0, qualityScore),
+            lifecycle: isLowQuality ? "blocked" : "processed"
         });
 
         logger.info("Article processed", { articleId: id, qualityScore, status: isLowQuality ? 'blocked' : 'processed' });
@@ -99,4 +61,3 @@ export const ArticleService = {
         return { isLowQuality, qualityScore };
     }
 };
-

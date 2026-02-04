@@ -4,6 +4,7 @@ import { formatDistanceToNow, format } from "date-fns";
 import { Bug, X, Copy, Check } from "lucide-react";
 import { useState } from "react";
 import { useDebugMode } from "@/hooks/useDebugMode";
+import { useSettings } from "@/components/providers/SettingsProvider";
 
 export type NewsArticle = {
     id: string;
@@ -19,6 +20,8 @@ export type NewsArticle = {
     readingTime?: number | null;
     keywords?: string[] | null;
     qualityScore?: number | null;
+    content?: string | null;
+    lifecycle?: string | null;
 };
 
 // Placeholder images based on source
@@ -41,15 +44,14 @@ function getPlaceholderImage(sourceId: string): string {
     return PLACEHOLDER_IMAGES.default;
 }
 
-// Format date with timezone support (Enforced IST)
-function formatExactDate(dateStr: string | null | undefined): string {
+// Format date with timezone support
+function formatExactDate(dateStr: string | null | undefined, timeZone: string, locale: string): string {
     if (!dateStr) return "";
     try {
         const date = new Date(dateStr);
 
-        // Enforce Indian Standard Time (IST)
-        return new Intl.DateTimeFormat('en-US', {
-            timeZone: 'Asia/Kolkata',
+        return new Intl.DateTimeFormat(locale || "en-IN", {
+            timeZone: timeZone || "Asia/Kolkata",
             year: 'numeric',
             month: 'short',
             day: 'numeric',
@@ -113,6 +115,7 @@ export function HeroCard({ article }: { article: NewsArticle }) {
     const image = article.image || getPlaceholderImage(article.sourceId);
     const { isEnabled: isDebug } = useDebugMode();
     const [showDebug, setShowDebug] = useState(false);
+    const { timeZone, locale } = useSettings();
 
     return (
         <>
@@ -154,7 +157,7 @@ export function HeroCard({ article }: { article: NewsArticle }) {
                             </span>
                             {(article.publishedAt || article.createdAt) && (
                                 <span className="text-sm text-gray-400">
-                                    {formatExactDate(article.publishedAt || article.createdAt)}
+                                    {formatExactDate(article.publishedAt || article.createdAt, timeZone, locale)}
                                 </span>
                             )}
                         </div>
@@ -186,6 +189,7 @@ export function NewsCard({ article, featured = false }: { article: NewsArticle; 
     const image = article.image || getPlaceholderImage(article.sourceId);
     const { isEnabled: isDebug } = useDebugMode();
     const [showDebug, setShowDebug] = useState(false);
+    const { timeZone, locale } = useSettings();
 
     if (featured) {
         return (
@@ -228,7 +232,7 @@ export function NewsCard({ article, featured = false }: { article: NewsArticle; 
                             </span>
                             {(article.publishedAt || article.createdAt) && (
                                 <span className="text-xs text-gray-500">
-                                    {formatExactDate(article.publishedAt || article.createdAt)}
+                                    {formatExactDate(article.publishedAt || article.createdAt, timeZone, locale)}
                                 </span>
                             )}
                         </div>
@@ -288,7 +292,7 @@ export function NewsCard({ article, featured = false }: { article: NewsArticle; 
                         </span>
                         {(article.publishedAt || article.createdAt) && (
                             <span className="text-xs text-gray-400">
-                                {formatExactDate(article.publishedAt || article.createdAt)}
+                                {formatExactDate(article.publishedAt || article.createdAt, timeZone, locale)}
                             </span>
                         )}
                     </div>

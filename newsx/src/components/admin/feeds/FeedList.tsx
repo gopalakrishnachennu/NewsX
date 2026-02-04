@@ -557,7 +557,15 @@ export function FeedList({ initialFeeds = [], refreshKey, onForceRefresh }: { in
                         const hasOverride = typeof feed.fetchIntervalMinutes === 'number' && feed.fetchIntervalMinutes > 0;
                         const effectiveInterval = hasOverride ? feed.fetchIntervalMinutes! : globalInterval;
 
-                        const lastFetched = (feed as any).lastFetchedAt ? new Date((feed as any).lastFetchedAt._seconds * 1000) : null;
+                        let lastFetched: Date | null = null;
+                        if ((feed as any).lastFetchedAt) {
+                            const val = (feed as any).lastFetchedAt;
+                            if (val._seconds) {
+                                lastFetched = new Date(val._seconds * 1000);
+                            } else {
+                                lastFetched = new Date(val);
+                            }
+                        }
                         let nextRunText = "Pending";
 
                         if (lastFetched) {

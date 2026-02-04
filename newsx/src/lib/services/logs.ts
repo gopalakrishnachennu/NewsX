@@ -1,5 +1,3 @@
-import { dbAdmin } from "@/lib/firebase-admin";
-import { FieldValue } from "firebase-admin/firestore";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -10,22 +8,26 @@ export interface LogEntry {
     timestamp: Date;
 }
 
-const COLLECTION = "logs";
-
 export const LogService = {
     async write(level: LogLevel, message: string, context?: Record<string, any>) {
+        // 1. Write to Console (Vercel Logs)
+        const timestamp = new Date().toISOString();
+        const entry = { level, message, context, timestamp };
+
+        if (level === "error") {
+            console.error(JSON.stringify(entry));
+        } else if (level === "warn") {
+            console.warn(JSON.stringify(entry));
+        } else {
+            console.log(JSON.stringify(entry));
+        }
+
+        // 2. Write to SQLite (Local Logs)
         try {
-            const db = dbAdmin();
-            await db.collection(COLLECTION).add({
-                level,
-                message,
-                context: context || {},
-                timestamp: FieldValue.serverTimestamp(),
-            });
+            const { LogRepository } = await import("@/lib/repositories/logs");
+            await LogRepository.log(level, message, context);
         } catch (error) {
-            // Fallback to console if Firestore fails
-            console.error("Failed to write log to Firestore", error);
-            console.log(JSON.stringify({ level, message, context }));
+            console.error("Failed to write log to SQLite", error);
         }
     },
 
@@ -46,16 +48,7 @@ export const LogService = {
     },
 
     async getRecent(limit = 50) {
-        const db = dbAdmin();
-        const snapshot = await db
-            .collection(COLLECTION)
-            .orderBy("timestamp", "desc")
-            .limit(limit)
-            .get();
-
-        return snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-        }));
+        const { LogRepository } = await import("@/lib/repositories/logs");
+        return LogRepository.getRecent(limit);
     },
 };

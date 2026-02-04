@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { dbAdmin } from "@/lib/firebase-admin";
-import { FieldValue } from "firebase-admin/firestore";
+import { dbAdminFeedsBackup } from "@/lib/firebase-admin";
+import type { Feed } from "@/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,13 +8,34 @@ export const revalidate = 0;
 
 const COLLECTION = "feeds";
 
+// PUT for full updates
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
     try {
         const body = await request.json();
-        const updates = { ...body, updatedAt: FieldValue.serverTimestamp() };
-        const db = dbAdmin();
-        await db.collection(COLLECTION).doc(id).set(updates, { merge: true });
+        const { FeedRepository } = await import("@/lib/repositories/feeds");
+        const existing = await FeedRepository.getById(id);
+        if (!existing) {
+            return new NextResponse("Feed not found", { status: 404 });
+        }
+
+        // DUAL WRITE: Update SQLite
+        const merged: Feed = {
+            ...existing,
+            ...body,
+            id,
+            updatedAt: new Date(),
+        };
+        await FeedRepository.upsert(merged);
+
+        // Firebase backup (feeds only)
+        try {
+            const db = dbAdminFeedsBackup();
+            await db.collection(COLLECTION).doc(id).set({ ...body, updatedAt: new Date() }, { merge: true });
+        } catch (e) {
+            console.warn("Firebase feed backup failed:", e);
+        }
+
         return NextResponse.json({ ok: true });
     } catch (error: any) {
         console.error("Failed to update feed", error);
@@ -27,9 +48,29 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { id } = await params;
     try {
         const body = await request.json();
-        const updates = { ...body, updatedAt: FieldValue.serverTimestamp() };
-        const db = dbAdmin();
-        await db.collection(COLLECTION).doc(id).set(updates, { merge: true });
+        const { FeedRepository } = await import("@/lib/repositories/feeds");
+        const existing = await FeedRepository.getById(id);
+        if (!existing) {
+            return new NextResponse("Feed not found", { status: 404 });
+        }
+
+        // DUAL WRITE: Update SQLite
+        const merged: Feed = {
+            ...existing,
+            ...body,
+            id,
+            updatedAt: new Date(),
+        };
+        await FeedRepository.upsert(merged);
+
+        // Firebase backup (feeds only)
+        try {
+            const db = dbAdminFeedsBackup();
+            await db.collection(COLLECTION).doc(id).set({ ...body, updatedAt: new Date() }, { merge: true });
+        } catch (e) {
+            console.warn("Firebase feed backup failed:", e);
+        }
+
         return NextResponse.json({ ok: true });
     } catch (error: any) {
         console.error("Failed to patch feed", error);
@@ -41,46 +82,28 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
     try {
-        const db = dbAdmin();
-        const feedRef = db.collection(COLLECTION).doc(id);
+        const { FeedRepository } = await import("@/lib/repositories/feeds");
+        const { ArticleRepository } = await import("@/lib/repositories/articles");
 
-        // 1. Get feed to find sourceId
-        const feedSnap = await feedRef.get();
-        if (!feedSnap.exists) {
+        const feed = await FeedRepository.getById(id);
+        if (!feed) {
             return NextResponse.json({ ok: true, message: "Feed already deleted" });
         }
 
-        const feedData = feedSnap.data();
-        const sourceId = feedData?.sourceId;
+        const sourceId = feed.sourceId;
 
-        // 2. Delete all associated articles
+        await FeedRepository.delete(id);
         if (sourceId) {
-            const articlesRef = db.collection("articles");
-            let deletedCount = 0;
-
-            // Delete in batches (Firestore limit 500)
-            while (true) {
-                const snapshot = await articlesRef
-                    .where("sourceId", "==", sourceId)
-                    .limit(500)
-                    .get();
-
-                if (snapshot.empty) break;
-
-                const batch = db.batch();
-                snapshot.docs.forEach((doc) => {
-                    batch.delete(doc.ref);
-                });
-
-                await batch.commit();
-                deletedCount += snapshot.size;
-                console.log(`Deleted article batch: ${snapshot.size}`);
-            }
-            console.log(`Deleted total ${deletedCount} articles for source ${sourceId}`);
+            await ArticleRepository.deleteBySourceId(sourceId);
         }
 
-        // 3. Delete the feed itself
-        await feedRef.delete();
+        // Firebase backup (feeds only)
+        try {
+            const db = dbAdminFeedsBackup();
+            await db.collection(COLLECTION).doc(id).delete();
+        } catch (e) {
+            console.warn("Firebase feed backup delete failed:", e);
+        }
 
         return NextResponse.json({ ok: true });
     } catch (error: any) {
@@ -88,5 +111,4 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
         return new NextResponse(`Failed to delete feed: ${error.message}`, { status: 500 });
     }
 }
-
 

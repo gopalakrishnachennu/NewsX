@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { authAdmin, dbAdmin } from "@/lib/firebase-admin";
-import { FieldValue } from "firebase-admin/firestore";
+import { authAdmin } from "@/lib/firebase-admin";
 import type { Role } from "@/types";
 
 export const runtime = "nodejs";
@@ -22,26 +21,9 @@ export async function GET(request: Request) {
         }
 
         const decoded = await authAdmin().verifyIdToken(token);
-        const db = dbAdmin();
-        const userRef = db.collection("users").doc(decoded.uid);
-        const userSnap = await userRef.get();
-
-        const existing = userSnap.exists ? (userSnap.data() as any) : null;
-        const role = (existing?.role as Role) || defaultRole;
-        const email = existing?.email || decoded.email || "";
-        const lastLoginMs = existing?.lastLogin?.toMillis
-            ? existing.lastLogin.toMillis()
-            : Date.now();
-
-        await userRef.set(
-            {
-                uid: decoded.uid,
-                email,
-                role,
-                lastLogin: FieldValue.serverTimestamp(),
-            },
-            { merge: true }
-        );
+        const role = defaultRole;
+        const email = decoded.email || "";
+        const lastLoginMs = Date.now();
 
         return NextResponse.json({
             user: {

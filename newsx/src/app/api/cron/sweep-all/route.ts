@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
-import { dbAdmin } from "@/lib/firebase-admin";
 import { LogService } from "@/lib/services/logs";
-import { FieldValue } from "firebase-admin/firestore";
+import { FeedRepository } from "@/lib/repositories/feeds";
+import { SettingsRepository } from "@/lib/repositories/settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // Allow up to 5 minutes for processing all feeds
-
-const FEEDS = "feeds";
 
 export async function POST(request: Request) {
     const startTime = Date.now();
@@ -42,19 +40,18 @@ export async function POST(request: Request) {
     let feedsScanned = 0;
 
     try {
-        const db = dbAdmin();
         await safeLog("info", "Cron sweep-all started", { force });
 
         // Get all active feeds
         // If this fails (Read Quota), we can't proceed at all.
-        const feedsSnapshot = await db.collection(FEEDS).where("active", "==", true).get();
+        const feeds = (await FeedRepository.getAll()).filter((f) => f.active);
 
-        if (feedsSnapshot.empty) {
+        if (feeds.length === 0) {
             await safeLog("info", "No active feeds to sweep", {});
             return NextResponse.json({ ok: true, feeds: 0, message: "No active feeds", results: [] });
         }
 
-        feedsScanned = feedsSnapshot.size;
+        feedsScanned = feeds.length;
         let totalCreated = 0;
         let totalProcessed = 0;
         let failed = 0;
@@ -62,20 +59,19 @@ export async function POST(request: Request) {
         // Fetch Global Settings first
         let globalDefaultInterval = 30;
         try {
-            const configDoc = await db.collection("system").doc("config").get();
-            globalDefaultInterval = configDoc.exists ? configDoc.data()?.defaultFetchInterval || 30 : 30;
+            const config = await SettingsRepository.getConfig();
+            globalDefaultInterval = config?.defaultFetchInterval || 30;
         } catch (e) {
             console.warn("Failed to load global config, using default 30m", e);
         }
 
         // Sweep each feed
-        for (const doc of feedsSnapshot.docs) {
-            const feedId = doc.id;
-            const feed = doc.data();
+        for (const feed of feeds) {
+            const feedId = feed.id;
 
             // INTERVAL CHECK
             const fetchIntervalMinutes = feed.fetchIntervalMinutes || globalDefaultInterval;
-            const lastFetchedAt = feed.lastFetchedAt?.toMillis() || 0;
+            const lastFetchedAt = feed.lastFetchedAt ? new Date(feed.lastFetchedAt as any).getTime() : 0;
             const timeSinceLast = Date.now() - lastFetchedAt;
             const intervalMs = fetchIntervalMinutes * 60 * 1000;
 

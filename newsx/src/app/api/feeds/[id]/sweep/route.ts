@@ -1,23 +1,19 @@
 import { NextResponse } from "next/server";
-import { dbAdmin } from "@/lib/firebase-admin";
-import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { FeedRepository } from "@/lib/repositories/feeds";
+import { ArticleRepository } from "@/lib/repositories/articles";
 import { XMLParser } from "fast-xml-parser";
 import crypto from "crypto";
-import type { ArticleLifecycle, Feed, FeedHealth } from "@/types";
+import type { Feed } from "@/types";
 import { logger } from "@/lib/logger";
 import { fetchWithRetry } from "@/lib/utils/retry";
 import { parseRelativeDate, extractUnixTimestampFromUrl } from "@/lib/utils/content-enrichment";
 
 // Health monitoring constants
-const MAX_CONSECUTIVE_FAILURES = 5;
 const AUTO_DISABLE_THRESHOLD = 5;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-const FEEDS = "feeds";
-const ARTICLES = "articles";
 
 type ParsedItem = {
     title: string;
@@ -105,10 +101,72 @@ function parseRssDate(item: any): Date | undefined {
         item.updated,
     ];
 
+    const parseCustomDate = (raw: string): Date | undefined => {
+        const value = raw.trim();
+
+        // Example: "Tuesday, February 03, 2026, 23:24 GMT +5:30"
+        // Example: "Tue, February 03, 2026, 11:24 PM IST"
+        const longMonth = value.match(
+            /^(?:\w{3,9},?\s+)?([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4}),\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?\s*(?:GMT|UTC|IST)?\s*([+\-]\d{1,2}:?\d{2})?$/i
+        );
+        if (longMonth) {
+            const [, mon, day, year, hh, mm, ss, ampm, tz] = longMonth;
+            const monthMap: Record<string, number> = {
+                jan: 1, january: 1,
+                feb: 2, february: 2,
+                mar: 3, march: 3,
+                apr: 4, april: 4,
+                may: 5,
+                jun: 6, june: 6,
+                jul: 7, july: 7,
+                aug: 8, august: 8,
+                sep: 9, sept: 9, september: 9,
+                oct: 10, october: 10,
+                nov: 11, november: 11,
+                dec: 12, december: 12,
+            };
+            const monthNum = monthMap[mon.toLowerCase()];
+            if (!monthNum) return undefined;
+
+            let hour = parseInt(hh, 10);
+            if (ampm) {
+                const upper = ampm.toUpperCase();
+                if (upper === "PM" && hour < 12) hour += 12;
+                if (upper === "AM" && hour === 12) hour = 0;
+            }
+
+            const second = ss ? parseInt(ss, 10) : 0;
+            let offset = tz;
+
+            if (!offset) {
+                // If no offset, assume IST
+                offset = "+05:30";
+            } else if (/^[+\-]\d{2}$/.test(offset)) {
+                offset = `${offset}:00`;
+            } else if (/^[+\-]\d{4}$/.test(offset)) {
+                offset = `${offset.slice(0, 3)}:${offset.slice(3)}`;
+            }
+
+            const iso = `${year}-${String(monthNum).padStart(2, "0")}-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(second).padStart(2, "0")}${offset}`;
+            const parsed = new Date(iso);
+            return isNaN(parsed.getTime()) ? undefined : parsed;
+        }
+
+        return undefined;
+    };
+
+    let parsedFromRss: Date | undefined;
+
     for (const rawValue of dateFields) {
         if (rawValue) {
             try {
                 let dateStr = String(rawValue).trim();
+
+                const customParsed = parseCustomDate(dateStr);
+                if (customParsed) {
+                    parsedFromRss = customParsed;
+                    break;
+                }
 
                 // Check if date string has timezone info
                 // Regex checks for: Z, +00:00, -0000, GMT, UTC, IST at the end
@@ -125,15 +183,19 @@ function parseRssDate(item: any): Date | undefined {
 
                 const parsed = new Date(dateStr);
 
+                // Debug log for date parsing (only if needed, or verbose)
+                // console.log(`Parsed RSS Date: ${dateStr} -> ${parsed.toISOString()}`);
+
                 // Validate date: 
                 // 1. Not Invalid
-                // 2. Not more than 1 hour in the future (Clock skew/Bad publisher)
+                // 2. Not more than 24 hours in the future (Relaxed from 1h to handle TZ messes)
                 // 3. Not older than 20 years (sanity)
                 const now = Date.now();
                 if (!isNaN(parsed.getTime()) &&
-                    parsed.getTime() < now + 60 * 60 * 1000 &&
+                    parsed.getTime() < now + 24 * 60 * 60 * 1000 &&
                     parsed.getTime() > now - 20 * 365 * 24 * 60 * 60 * 1000) {
-                    return parsed;
+                    parsedFromRss = parsed;
+                    break;
                 }
             } catch {
                 continue;
@@ -145,20 +207,34 @@ function parseRssDate(item: any): Date | undefined {
     const url = String(item.link?.["#text"] || item.link || "").trim();
     const urlDate = extractDateFromUrl(url);
     if (urlDate && urlDate.getTime() < Date.now() + 86400000) {
-        return urlDate;
+        if (!parsedFromRss) return urlDate;
+
+        // If RSS date differs significantly from URL date, prefer URL date with RSS time-of-day
+        const diffMs = Math.abs(parsedFromRss.getTime() - urlDate.getTime());
+        if (diffMs > 12 * 60 * 60 * 1000) {
+            const merged = new Date(Date.UTC(
+                urlDate.getUTCFullYear(),
+                urlDate.getUTCMonth(),
+                urlDate.getUTCDate(),
+                parsedFromRss.getUTCHours(),
+                parsedFromRss.getUTCMinutes(),
+                parsedFromRss.getUTCSeconds()
+            ));
+            return merged;
+        }
     }
 
     // Try 3: Extract Unix timestamp from URL
     const unixDate = extractUnixTimestampFromUrl(url);
     if (unixDate && unixDate.getTime() < Date.now() + 86400000) {
-        return unixDate;
+        return parsedFromRss || unixDate;
     }
 
     // Try 4: Extract date from GUID
     const guid = item.guid?.["#text"] || item.guid || item.id;
     const guidDate = extractDateFromGuid(String(guid || ""));
     if (guidDate && guidDate.getTime() < Date.now() + 86400000) {
-        return guidDate;
+        return parsedFromRss || guidDate;
     }
 
     // Try 5: Parse relative dates from description if present
@@ -166,11 +242,39 @@ function parseRssDate(item: any): Date | undefined {
     if (description) {
         const relativeDate = parseRelativeDate(description.substring(0, 100));
         if (relativeDate && relativeDate.getTime() < Date.now() + 86400000) {
-            return relativeDate;
+            return parsedFromRss || relativeDate;
         }
     }
 
-    return undefined;
+    return parsedFromRss;
+}
+
+function resolvePublishedAt(item: any, sourceId: string | undefined): Date | undefined {
+    const url = String(item.link?.["#text"] || item.link || "").trim();
+    const urlDate = extractDateFromUrl(url);
+    const rssDate = parseRssDate(item);
+
+    // Per-feed overrides: Zee / Mid-Day often have inconsistent RSS dates.
+    const source = (sourceId || "").toLowerCase();
+    const preferUrlDateSources = new Set(["zee", "zeenews", "mid-day", "midday"]);
+
+    if (preferUrlDateSources.has(source) && urlDate) {
+        if (rssDate) {
+            // Merge URL date with RSS time-of-day when available
+            return new Date(Date.UTC(
+                urlDate.getUTCFullYear(),
+                urlDate.getUTCMonth(),
+                urlDate.getUTCDate(),
+                rssDate.getUTCHours(),
+                rssDate.getUTCMinutes(),
+                rssDate.getUTCSeconds()
+            ));
+        }
+        return urlDate;
+    }
+
+    // Default fallback priority
+    return rssDate || urlDate || undefined;
 }
 
 function extractItems(xmlText: string): ParsedItem[] {
@@ -292,21 +396,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const url = new URL(request.url);
     const force = url.searchParams.get("force") === "true";
 
-    try {
-        const db = dbAdmin();
-        const feedRef = db.collection(FEEDS).doc(id);
-        const feedSnap = await feedRef.get();
+    let feed: Feed | null = null;
 
-        if (!feedSnap.exists) {
+    try {
+        feed = await FeedRepository.getById(id);
+        if (!feed) {
             return NextResponse.json({ ok: false, error: "Feed not found" }, { status: 404 });
         }
-
-        const feed = feedSnap.data() as Feed;
+        const recentHashes = new Set(feed.recentHashes || []);
+        const processedHashes: string[] = [];
 
         // FETCH INTERVAL CHECK
         // If not forced, check if we need to fetch
         const fetchIntervalMinutes = feed.fetchIntervalMinutes || 30; // Default 30m
-        const lastFetchedAt = feed.lastFetchedAt?.toMillis() || 0;
+        const lastFetchedAt = feed.lastFetchedAt ? new Date(feed.lastFetchedAt as any).getTime() : 0;
         const timeSinceLastFetch = Date.now() - lastFetchedAt;
         const intervalMs = fetchIntervalMinutes * 60 * 1000;
 
@@ -360,11 +463,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         // Handle 304 Not Modified
         if (response.status === 304) {
             logger.info("Sweep skipped - 304 Not Modified", { feedId: id });
-            await feedRef.update({
-                lastFetchedAt: FieldValue.serverTimestamp(),
-                "health.lastSuccess": FieldValue.serverTimestamp(),
-                "health.status": "healthy",
-                "health.consecutiveFailures": 0,
+            const now = new Date();
+            await FeedRepository.upsert({
+                ...feed,
+                lastFetchedAt: now,
+                health: {
+                    ...feed.health,
+                    status: "healthy",
+                    lastSuccess: now,
+                    lastCheck: now,
+                    consecutiveFailures: 0,
+                },
+                updatedAt: now,
             });
             return NextResponse.json({
                 ok: true,
@@ -384,14 +494,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const currentHash = crypto.createHash("sha256").update(xmlText).digest("hex");
         if (!force && feed.lastContentHash === currentHash) {
             logger.info("Sweep skipped - Content Hash Match", { feedId: id });
-            await feedRef.update({
-                lastFetchedAt: FieldValue.serverTimestamp(),
-                "health.lastSuccess": FieldValue.serverTimestamp(),
-                "health.status": "healthy",
-                "health.consecutiveFailures": 0,
-                // Update headers if changed even if body didn't (rare but good hygiene)
-                ...(response.headers.get("etag") && { lastETag: response.headers.get("etag") }),
-                ...(response.headers.get("last-modified") && { lastModified: response.headers.get("last-modified") }),
+            const now = new Date();
+            await FeedRepository.upsert({
+                ...feed,
+                lastFetchedAt: now,
+                lastETag: response.headers.get("etag") || feed.lastETag,
+                lastModified: response.headers.get("last-modified") || feed.lastModified,
+                health: {
+                    ...feed.health,
+                    status: "healthy",
+                    lastSuccess: now,
+                    lastCheck: now,
+                    consecutiveFailures: 0,
+                },
+                updatedAt: now,
             });
             return NextResponse.json({
                 ok: true,
@@ -404,7 +520,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const items = extractItems(xmlText);
 
         // DEDUPLICATION & PROCESSING
-        const batch = db.batch();
         let created = 0;
         let updated = 0;
         let skippedCount = 0;
@@ -414,7 +529,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         // We can safely ignore any itemOLDER than this date.
         // NOTE: We add a small buffer (e.g., 1 min) to handle second-precision mismatches or updates.
         // But for strict "New Items Only", > is correct.
-        let maxPublishedAt = feed.lastSeenArticleDate?.toMillis() || 0;
+        let maxPublishedAt = feed.lastSeenArticleDate ? new Date(feed.lastSeenArticleDate as any).getTime() : 0;
 
         // If we are forcing, we might want to re-process old items. 
         // If not forcing, strict filter.
@@ -426,11 +541,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             const normalizedUrl = normalizeUrl(item.url);
 
             // Check Date (Level 1 Filter)
-            let publishedAt = item.publishedAt;
-            if (!publishedAt) publishedAt = new Date();
+            const publishedAt = resolvePublishedAt(item, feed.sourceId);
 
             // Skip if older than what we've seen (Optimization: Avoid DB Read)
-            if (publishedAt.getTime() <= dateThreshold) {
+            if (publishedAt && publishedAt.getTime() <= dateThreshold) {
                 // If it's the exact same time, it might be the same article.
                 // If strictly older, definitely skip.
                 // We'll skip <= to be aggressive on quota.
@@ -438,18 +552,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 continue;
             }
 
-            if (publishedAt.getTime() > maxPublishedAt) {
+            if (publishedAt && publishedAt.getTime() > maxPublishedAt) {
                 maxPublishedAt = publishedAt.getTime();
             }
 
             const articleId = hashUrl(normalizedUrl);
-            const articleRef = db.collection(ARTICLES).doc(articleId);
+
+            // Level 0: Recent Hash Check (Optimization: Avoid DB Read)
+            if (!force && recentHashes.has(articleId)) {
+                skippedCount++;
+                processedHashes.push(articleId); // Keep it alive in the list
+                continue;
+            }
 
             // NOW we read (only for fresh items)
-            const docSnap = await articleRef.get();
-
-            const isNew = !docSnap.exists;
-            const existing = isNew ? null : docSnap.data();
+            const existing = await ArticleRepository.getById(articleId);
+            const isNew = !existing;
 
             // Check if we should update
             if (!isNew && existing) {
@@ -459,19 +577,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                     continue;
                 }
 
-                batch.update(articleRef, {
+                await ArticleRepository.updateById(articleId, {
                     title: item.title,
-                    updatedAt: FieldValue.serverTimestamp(),
-                    ...(item.summary && !existing.summary && { summary: item.summary }),
-                    ...(item.image && !existing.image && { image: item.image }),
-                    ...(force && { publishedAt: Timestamp.fromDate(publishedAt) }),
+                    summary: item.summary && !existing.summary ? item.summary : existing.summary,
+                    image: item.image && !existing.image ? item.image : existing.image,
+                    // Lock publish date after first set; only set if missing
+                    ...(!existing.publishedAt && publishedAt ? { published_at: publishedAt.toISOString() } : {}),
                 });
                 updated++;
             } else {
                 // INSERT NEW
-                batch.set(articleRef, {
+                await ArticleRepository.upsert({
+                    id: articleId,
                     title: item.title,
-                    url: normalizedUrl, // Store normalized
+                    url: normalizedUrl,
                     originalUrl: item.url,
                     sourceId: feed.sourceId,
                     summary: item.summary || null,
@@ -481,30 +600,36 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                     qualityScore: 0,
                     lang: "en",
                     guid: item.guid || null,
-                    publishedAt: Timestamp.fromDate(publishedAt),
-                    createdAt: FieldValue.serverTimestamp(),
-                    updatedAt: FieldValue.serverTimestamp(),
+                    publishedAt: publishedAt ? publishedAt.toISOString() : null,
+                    createdAt: new Date().toISOString(),
                 });
                 created++;
             }
-        }
 
-        if (created > 0 || updated > 0) {
-            await batch.commit();
+            // Add to processed list for next time
+            processedHashes.push(articleId);
         }
 
         // UPDATE FEED METADATA
-        await feedRef.update({
-            lastFetchedAt: FieldValue.serverTimestamp(),
-            lastSeenArticleDate: Timestamp.fromMillis(maxPublishedAt),
-            lastContentHash: currentHash, // Store new hash
+        const now = new Date();
+        const lastSeen = maxPublishedAt > 0 ? new Date(maxPublishedAt) : feed.lastSeenArticleDate;
+        await FeedRepository.upsert({
+            ...feed,
+            lastFetchedAt: now,
+            ...(lastSeen ? { lastSeenArticleDate: lastSeen } : {}),
+            lastContentHash: currentHash,
             lastETag: response.headers.get("etag") || null,
             lastModified: response.headers.get("last-modified") || null,
-            "health.lastSuccess": FieldValue.serverTimestamp(),
-            "health.status": "healthy",
-            "health.consecutiveFailures": 0,
-            "health.errorCount24h": 0,
-            updatedAt: FieldValue.serverTimestamp(),
+            recentHashes: Array.from(new Set([...processedHashes, ...(feed.recentHashes || [])])).slice(0, 200),
+            health: {
+                ...feed.health,
+                status: "healthy",
+                lastSuccess: now,
+                lastCheck: now,
+                consecutiveFailures: 0,
+                errorCount24h: 0,
+            },
+            updatedAt: now,
         });
 
         return NextResponse.json({
@@ -521,7 +646,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         console.error("Sweep failed", error);
         // ... (Return error response)
         const message = error?.message || "unknown error";
+        if (feed) {
+            const now = new Date();
+            const consecutiveFailures = (feed.health?.consecutiveFailures || 0) + 1;
+            const status = consecutiveFailures >= AUTO_DISABLE_THRESHOLD ? "disabled" : "error";
+            await FeedRepository.upsert({
+                ...feed,
+                health: {
+                    ...feed.health,
+                    status,
+                    lastError: message,
+                    lastCheck: now,
+                    errorCount24h: (feed.health?.errorCount24h || 0) + 1,
+                    consecutiveFailures,
+                },
+                updatedAt: now,
+            });
+        }
         return NextResponse.json({ ok: false, error: `Sweep failed: ${message}` }, { status: 500 });
     }
 }
-

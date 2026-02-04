@@ -1,5 +1,7 @@
 "use client";
 
+import { QuotaDashboard } from "@/components/admin/QuotaDashboard";
+import { SourceDistribution } from "@/components/admin/SourceDistribution";
 import { KpiStats } from "@/components/admin/KpiStats";
 import { LiveQueue } from "@/components/admin/LiveQueue";
 import { TrendingClusters } from "@/components/admin/TrendingClusters";
@@ -24,6 +26,8 @@ export default function AdminDashboard() {
                 </div>
             </div>
 
+            <QuotaDashboard />
+            <SourceDistribution />
             <KpiStats />
 
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">

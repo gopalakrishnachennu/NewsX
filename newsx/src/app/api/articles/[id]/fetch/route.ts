@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { dbAdmin } from "@/lib/firebase-admin";
-import { FieldValue } from "firebase-admin/firestore";
 import { LogService } from "@/lib/services/logs";
 import type { Article } from "@/types";
 
@@ -93,15 +91,12 @@ export async function POST(
     const force = url.searchParams.get("force") === "true";
 
     try {
-        const db = dbAdmin();
-        const articleRef = db.collection(ARTICLES).doc(articleId);
-        const articleSnap = await articleRef.get();
+        const { ArticleRepository } = await import("@/lib/repositories/articles");
+        const article = await ArticleRepository.getById(articleId);
 
-        if (!articleSnap.exists) {
+        if (!article) {
             return NextResponse.json({ error: "Article not found" }, { status: 404 });
         }
-
-        const article = articleSnap.data() as Article;
 
         // Idempotent: skip if content exists (unless forced)
         if (article.content && article.content.length > 100 && !force) {
@@ -126,10 +121,9 @@ export async function POST(
 
         if (!response.ok) {
             const errorMsg = `HTTP ${response.status}`;
-            await articleRef.update({
-                fetchError: errorMsg,
-                lastFetchedAt: FieldValue.serverTimestamp(),
-                updatedAt: FieldValue.serverTimestamp(),
+            await ArticleRepository.updateById(articleId, {
+                fetch_error: errorMsg,
+                last_fetched_at: new Date().toISOString(),
             });
             await LogService.error("Fetch failed", { articleId, error: errorMsg });
             return NextResponse.json({ ok: false, error: errorMsg }, { status: 422 });
@@ -140,10 +134,9 @@ export async function POST(
 
         if (content.length < 50) {
             const errorMsg = "Content too short";
-            await articleRef.update({
-                fetchError: errorMsg,
-                lastFetchedAt: FieldValue.serverTimestamp(),
-                updatedAt: FieldValue.serverTimestamp(),
+            await ArticleRepository.updateById(articleId, {
+                fetch_error: errorMsg,
+                last_fetched_at: new Date().toISOString(),
             });
             await LogService.warn("Content extraction failed", { articleId, contentLength: content.length });
             return NextResponse.json({ ok: false, error: errorMsg }, { status: 422 });
@@ -160,14 +153,13 @@ export async function POST(
         const qualityScore = Math.max(0, 100 - clickbaitCheck.score - (prCheck ? 50 : 0) - (wordCountCheck ? 0 : 30));
 
         // Update article with content AND image
-        await articleRef.update({
+        await ArticleRepository.updateById(articleId, {
             content,
             image: image || article.image || "",
-            qualityScore,
+            quality_score: qualityScore,
             lifecycle: isLowQuality ? "blocked" : "processed",
-            fetchError: FieldValue.delete(),
-            lastFetchedAt: FieldValue.serverTimestamp(),
-            updatedAt: FieldValue.serverTimestamp(),
+            fetch_error: null,
+            last_fetched_at: new Date().toISOString(),
         });
 
         await LogService.info("Article processed", {
@@ -190,11 +182,10 @@ export async function POST(
         await LogService.error("Fetch exception", { articleId, error: errorMsg });
 
         try {
-            const db = dbAdmin();
-            await db.collection(ARTICLES).doc(articleId).update({
-                fetchError: errorMsg,
-                lastFetchedAt: FieldValue.serverTimestamp(),
-                updatedAt: FieldValue.serverTimestamp(),
+            const { ArticleRepository } = await import("@/lib/repositories/articles");
+            await ArticleRepository.updateById(articleId, {
+                fetch_error: errorMsg,
+                last_fetched_at: new Date().toISOString(),
             });
         } catch {
             // Ignore update failure

@@ -207,14 +207,29 @@ export function sortArticles<T extends SortableArticle>(
 /**
  * Group articles by date for easy display
  */
+function getDateKeyInTimeZone(date: Date, timeZone: string): string {
+    try {
+        const parts = new Intl.DateTimeFormat("en-CA", {
+            timeZone,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }).format(date);
+        return parts; // YYYY-MM-DD
+    } catch {
+        return date.toISOString().slice(0, 10);
+    }
+}
+
 export function groupArticlesByDate<T extends SortableArticle>(
-    articles: T[]
+    articles: T[],
+    timeZone: string = "Asia/Kolkata"
 ): Map<string, T[]> {
     const groups = new Map<string, T[]>();
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-    const thisWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const todayKey = getDateKeyInTimeZone(now, timeZone);
+    const yesterdayKey = getDateKeyInTimeZone(new Date(now.getTime() - 24 * 60 * 60 * 1000), timeZone);
+    const thisWeekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
     for (const article of articles) {
         const timestamp = parseArticleDate(article);
@@ -224,17 +239,21 @@ export function groupArticlesByDate<T extends SortableArticle>(
             groupKey = "Unknown Date";
         } else {
             const date = new Date(timestamp);
-            const articleDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+            const articleKey = getDateKeyInTimeZone(date, timeZone);
 
-            if (articleDate.getTime() === today.getTime()) {
+            if (articleKey === todayKey) {
                 groupKey = "Today";
-            } else if (articleDate.getTime() === yesterday.getTime()) {
+            } else if (articleKey === yesterdayKey) {
                 groupKey = "Yesterday";
-            } else if (articleDate >= thisWeek) {
+            } else if (date >= thisWeekStart) {
                 groupKey = "This Week";
             } else {
                 // Format as "Month Year"
-                groupKey = date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+                groupKey = new Intl.DateTimeFormat("en-US", {
+                    timeZone,
+                    month: "long",
+                    year: "numeric",
+                }).format(date);
             }
         }
 

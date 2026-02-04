@@ -39,4 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-\n# Firebase Secrets\n*-firebase-adminsdk-*.json
+
+# Firebase Secrets
+*-firebase-adminsdk-*.json
+
+# Local DB
+local.db*

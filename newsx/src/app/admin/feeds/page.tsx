@@ -2,12 +2,14 @@
 
 import { FeedList } from "@/components/admin/feeds/FeedList";
 import { Plus, Zap } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function AdminFeedsPage() {
     const [showForm, setShowForm] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [globalInterval, setGlobalInterval] = useState(30);
+    const [timeZone, setTimeZone] = useState("Asia/Kolkata");
+    const [defaultNewsLimit, setDefaultNewsLimit] = useState(100);
     const [sourceId, setSourceId] = useState("");
     const [url, setUrl] = useState("");
     const [type, setType] = useState("");
@@ -30,7 +32,7 @@ export default function AdminFeedsPage() {
             await fetch("/api/admin/settings", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ defaultFetchInterval: globalInterval }),
+                body: JSON.stringify({ defaultFetchInterval: globalInterval, timeZone, defaultNewsLimit }),
             });
             setShowSettings(false);
             setStatus("✅ Global settings updated!");
@@ -41,6 +43,28 @@ export default function AdminFeedsPage() {
             setSaving(false);
         }
     };
+
+    useEffect(() => {
+        const loadSettings = async () => {
+            try {
+                const res = await fetch("/api/admin/settings", { cache: "no-store" });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data?.config?.defaultFetchInterval) {
+                    setGlobalInterval(data.config.defaultFetchInterval);
+                }
+                if (data?.config?.timeZone) {
+                    setTimeZone(data.config.timeZone);
+                }
+                if (data?.config?.defaultNewsLimit) {
+                    setDefaultNewsLimit(Number(data.config.defaultNewsLimit));
+                }
+            } catch {
+                // ignore
+            }
+        };
+        void loadSettings();
+    }, []);
 
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
@@ -166,7 +190,7 @@ export default function AdminFeedsPage() {
                     <p className="text-sm text-gray-600 mb-4">
                         Set the default fetch interval for the entire system. Any feed without a specific override will follow this schedule.
                     </p>
-                    <div className="flex items-end gap-4">
+                    <div className="flex items-end gap-4 flex-wrap">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Default Fetch Interval</label>
                             <select
@@ -180,6 +204,32 @@ export default function AdminFeedsPage() {
                                 <option value="60">Every hour</option>
                                 <option value="360">Every 6 hours</option>
                             </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Primary Timezone</label>
+                            <select
+                                value={timeZone}
+                                onChange={(e) => setTimeZone(e.target.value)}
+                                className="w-64 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                            >
+                                <option value="Asia/Kolkata">IST (Asia/Kolkata)</option>
+                                <option value="UTC">UTC</option>
+                                <option value="America/New_York">US Eastern (America/New_York)</option>
+                                <option value="America/Los_Angeles">US Pacific (America/Los_Angeles)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Default News Limit</label>
+                            <input
+                                type="number"
+                                min={10}
+                                max={2000}
+                                step={10}
+                                value={defaultNewsLimit}
+                                onChange={(e) => setDefaultNewsLimit(Number(e.target.value))}
+                                className="w-64 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">Max 2000 per page load.</p>
                         </div>
                         <button
                             onClick={handleSaveSettings}
