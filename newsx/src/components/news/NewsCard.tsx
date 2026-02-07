@@ -15,13 +15,22 @@ export type NewsArticle = {
     summary?: string | null;
     publishedAt?: string | null;
     createdAt?: string | null;
-    author?: string | null;
     category?: string | null;
     readingTime?: number | null;
     keywords?: string[] | null;
     qualityScore?: number | null;
     content?: string | null;
     lifecycle?: string | null;
+    // Extended Metadata
+    fetchError?: string | null;
+    lastFetchedAt?: string | null;
+    guid?: string | null;
+    lang?: string | null;
+    author?: string | null;
+    imageSource?: string | null;
+    imageAttribution?: string | null;
+    imageLicenseUrl?: string | null;
+    imagePrompt?: string | null;
 };
 
 // Placeholder images based on source
@@ -120,9 +129,7 @@ export function HeroCard({ article }: { article: NewsArticle }) {
     return (
         <>
             <a
-                href={article.url}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={`/news/${article.id}`}
                 className="group relative block overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 shadow-2xl transition-all duration-500 hover:shadow-blue-500/20 hover:scale-[1.01]"
             >
                 <div className="relative aspect-[16/9] md:aspect-[21/9]">
@@ -195,9 +202,7 @@ export function NewsCard({ article, featured = false }: { article: NewsArticle; 
         return (
             <>
                 <a
-                    href={article.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href={`/news/${article.id}`}
                     className="group flex flex-col overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-gray-200 transition-all duration-300 hover:shadow-xl hover:ring-blue-200 relative"
                 >
                     <div className="relative aspect-[16/10] overflow-hidden">
@@ -256,9 +261,7 @@ export function NewsCard({ article, featured = false }: { article: NewsArticle; 
     return (
         <>
             <a
-                href={article.url}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={`/news/${article.id}`}
                 className="group flex gap-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100 transition-all duration-200 hover:shadow-md hover:ring-blue-200 hover:bg-blue-50/30 relative"
             >
                 <div className="relative h-24 w-24 md:h-28 md:w-28 flex-shrink-0 overflow-hidden rounded-lg">

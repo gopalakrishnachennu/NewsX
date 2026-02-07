@@ -166,9 +166,17 @@ export function RecentArticles() {
                                                     {article.title || article.url}
                                                 </a>
                                                 {article.fetchError && (
-                                                    <span className="text-xs text-red-500">
-                                                        Error: {article.fetchError}
-                                                    </span>
+                                                    <div className="mt-1 flex items-center gap-1.5">
+                                                        {article.fetchError.includes("403") ? (
+                                                            <span className="inline-flex items-center gap-1 text-xs font-medium text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded">
+                                                                <Ban className="w-3 h-3" /> Source Blocked (403)
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-xs text-red-500">
+                                                                Error: {article.fetchError}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>

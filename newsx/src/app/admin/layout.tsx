@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Rss, ScrollText } from "lucide-react";
+import { LayoutDashboard, Rss, ScrollText, Activity } from "lucide-react";
 
 const NAV_ITEMS = [
     { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/admin/status", label: "System Status", icon: Activity },
     { href: "/admin/feeds", label: "Feeds", icon: Rss },
     { href: "/admin/logs", label: "Logs", icon: ScrollText },
 ];
@@ -32,8 +33,8 @@ export default function AdminLayout({
                                         key={item.href}
                                         href={item.href}
                                         className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${isActive
-                                                ? "bg-gray-100 text-gray-900"
-                                                : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                                            ? "bg-gray-100 text-gray-900"
+                                            : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                                             }`}
                                     >
                                         <item.icon className="h-4 w-4" />

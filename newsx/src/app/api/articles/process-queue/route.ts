@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { LogService } from "@/lib/services/logs";
 import crypto from "crypto";
 import { enrichContent } from "@/lib/utils/content-enrichment";
+import { getRandomUserAgent } from "@/lib/utils/user-agents";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,55 +18,81 @@ async function fetchArticleContent(articleId: string, articleUrl: string): Promi
     error?: string;
 }> {
     try {
+        const origin = (() => {
+            try {
+                return new URL(articleUrl).origin;
+            } catch {
+                return "https://newsx.app";
+            }
+        })();
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12000);
+
         const response = await fetch(articleUrl, {
             headers: {
-                "User-Agent": "NewsXBot/1.0 (+https://newsx.app)",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "User-Agent": getRandomUserAgent(),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-IN,en-US;q=0.9,en;q=0.8",
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache",
+                "Referer": "https://www.google.com/", // Better to fake coming from Google
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "cross-site",
+                "Upgrade-Insecure-Requests": "1",
             },
             redirect: "follow",
+            signal: controller.signal,
         });
+        clearTimeout(timeout);
 
-        if (!response.ok) {
-            return { ok: false, error: `HTTP ${response.status}` };
+        if (response.ok) {
+            const html = await response.text();
+
+            // Extract image from og:image or twitter:image
+            let image: string | null = null;
+            const ogMatch = html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i) ||
+                html.match(/<meta[^>]*content="([^"]+)"[^>]*property="og:image"/i);
+            if (ogMatch?.[1]) {
+                image = ogMatch[1];
+            } else {
+                const twitterMatch = html.match(/<meta[^>]*name="twitter:image"[^>]*content="([^"]+)"/i);
+                if (twitterMatch?.[1]) image = twitterMatch[1];
+            }
+
+            const plainText = extractMainContent(html);
+            if (plainText.length < 50) return { ok: false, error: "Content too short" };
+
+            return { ok: true, content: plainText, image };
+        } else if (response.status === 403 || response.status === 401) {
+            // Fallback: Try Google Web Cache
+            await LogService.info("Direct access blocked, trying Google Cache", { url: articleUrl });
+            const cacheUrl = `http://webcache.googleusercontent.com/search?q=cache:${encodeURIComponent(articleUrl)}`;
+
+            try {
+                const cacheRes = await fetch(cacheUrl, {
+                    headers: {
+                        "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+                    }
+                });
+
+                if (cacheRes.ok) {
+                    const html = await cacheRes.text();
+                    const plainText = extractMainContent(html);
+                    if (plainText.length > 100) {
+                        return { ok: true, content: plainText, image: null };
+                    }
+                }
+            } catch (e: any) {
+                await LogService.error("Google Cache attempt failed", { error: e.message });
+            }
+            return { ok: false, error: `Blocked (HTTP ${response.status}) & Cache Miss` };
         }
 
-        const html = await response.text();
-
-        // Extract image from og:image or twitter:image
-        let image: string | null = null;
-        const ogMatch = html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i) ||
-            html.match(/<meta[^>]*content="([^"]+)"[^>]*property="og:image"/i);
-        if (ogMatch?.[1]) {
-            image = ogMatch[1];
-        } else {
-            const twitterMatch = html.match(/<meta[^>]*name="twitter:image"[^>]*content="([^"]+)"/i);
-            if (twitterMatch?.[1]) image = twitterMatch[1];
-        }
-
-        // Simple content extraction
-        let text = html
-            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-            .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, "")
-            .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, "");
-
-        const articleMatch = text.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
-        const mainMatch = text.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
-        const targetHtml = articleMatch?.[1] || mainMatch?.[1] || text;
-
-        const plainText = targetHtml
-            .replace(/<[^>]+>/g, " ")
-            .replace(/\s+/g, " ")
-            .trim()
-            .slice(0, 10000);
-
-        if (plainText.length < 50) {
-            return { ok: false, error: "Content too short" };
-        }
-
-        return { ok: true, content: plainText, image };
+        return { ok: false, error: `HTTP ${response.status}` };
     } catch (error: any) {
-        return { ok: false, error: error?.message || "Fetch failed" };
+        const message = error?.name === "AbortError" ? "Timeout" : (error?.message || "Fetch failed");
+        return { ok: false, error: message };
     }
 }
 
@@ -135,11 +162,16 @@ export async function POST(request: Request) {
 
                 processed++;
             } else {
-                // ... error handling
+                const err = result.error || "Fetch failed";
+                const isBlocked = /HTTP\s+(401|403|429)/.test(err);
+                const now = new Date().toISOString();
+
+                // If blocked by site, don't keep retrying forever.
+                // Publish with existing summary/image so it shows up, but mark fetch_error.
                 await ArticleRepository.updateById(articleId, {
-                    fetch_error: result.error,
-                    lifecycle: "error",
-                    last_fetched_at: new Date().toISOString(),
+                    fetch_error: err,
+                    lifecycle: isBlocked ? "published" : "error",
+                    last_fetched_at: now,
                 });
                 failed++;
             }
@@ -174,4 +206,23 @@ export async function POST(request: Request) {
 // Convenience GET handler so browser opens don't 405
 export async function GET(request: Request) {
     return POST(request);
+}
+
+function extractMainContent(html: string): string {
+    let text = html
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+        .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, "")
+        .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, "");
+
+    // Prioritize <article> or <main>
+    const articleMatch = text.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
+    const mainMatch = text.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
+    const targetHtml = articleMatch?.[1] || mainMatch?.[1] || text;
+
+    return targetHtml
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 10000);
 }

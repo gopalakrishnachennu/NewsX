@@ -16,7 +16,7 @@ type SweepResult = {
     error?: string;
 };
 
-function SweepResultsModal({ results, onClose, summary }: { results: SweepResult[], onClose: () => void, summary?: any }) {
+function SweepResultsModal({ results, onClose, onEnable, summary }: { results: SweepResult[], onClose: () => void, onEnable: (id: string) => void, summary?: any }) {
     const failed = results.filter(r => r.error);
     const success = results.filter(r => !r.error);
 
@@ -43,11 +43,21 @@ function SweepResultsModal({ results, onClose, summary }: { results: SweepResult
                             </h4>
                             <div className="space-y-2">
                                 {failed.map((r, i) => (
-                                    <div key={i} className="bg-white p-3 rounded border border-red-200 shadow-sm text-sm">
-                                        <div className="font-medium text-gray-900">{r.sourceId}</div>
-                                        <div className="text-red-600 font-mono text-xs mt-1 break-all bg-red-50 p-1 rounded">
-                                            {r.error}
+                                    <div key={i} className="bg-white p-3 rounded border border-red-200 shadow-sm text-sm flex justify-between items-start gap-3">
+                                        <div className="flex-1">
+                                            <div className="font-medium text-gray-900">{r.sourceId}</div>
+                                            <div className="text-red-600 font-mono text-xs mt-1 break-all bg-red-50 p-1 rounded">
+                                                {r.error}
+                                            </div>
                                         </div>
+                                        {(r.error?.includes("disabled") || r.error?.includes("disable")) && (
+                                            <button
+                                                onClick={() => onEnable(r.feedId)}
+                                                className="shrink-0 px-3 py-1.5 bg-green-100 text-green-700 text-xs font-semibold rounded hover:bg-green-200 transition-colors flex items-center gap-1"
+                                            >
+                                                <Play className="w-3 h-3" /> Re-enable
+                                            </button>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -81,6 +91,7 @@ function SweepResultsModal({ results, onClose, summary }: { results: SweepResult
         </div>
     );
 }
+
 
 export function FeedList({ initialFeeds = [], refreshKey, onForceRefresh }: { initialFeeds?: Feed[], refreshKey?: number, onForceRefresh?: () => void }) {
     const [feeds, setFeeds] = useState<FeedRow[]>(initialFeeds.map(f => ({ ...f, id: f.id || '' })));
@@ -675,6 +686,7 @@ export function FeedList({ initialFeeds = [], refreshKey, onForceRefresh }: { in
                     results={sweepResults.results}
                     summary={sweepResults.summary}
                     onClose={() => setSweepResults(null)}
+                    onEnable={handleReEnable}
                 />
             )}
         </div>

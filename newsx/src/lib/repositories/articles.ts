@@ -10,8 +10,9 @@ export const ArticleRepository = {
                 sql: `INSERT INTO articles (
                         id, title, url, original_url, normalized_title, source_id, content, image, summary, 
                         lifecycle, published_at, created_at, category, 
-                        quality_score, reading_time, keywords, fetch_error, last_fetched_at, guid, lang, author
-                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        quality_score, reading_time, keywords, fetch_error, last_fetched_at, guid, lang, author,
+                        image_source, image_attribution, image_license_url, image_prompt
+                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                       ON CONFLICT(id) DO UPDATE SET
                         title=excluded.title,
                         url=excluded.url,
@@ -29,6 +30,10 @@ export const ArticleRepository = {
                         guid=excluded.guid,
                         lang=excluded.lang,
                         author=excluded.author,
+                        image_source=excluded.image_source,
+                        image_attribution=excluded.image_attribution,
+                        image_license_url=excluded.image_license_url,
+                        image_prompt=excluded.image_prompt,
                         updated_at=CURRENT_TIMESTAMP`,
                 args: [
                     article.id || null,
@@ -51,7 +56,11 @@ export const ArticleRepository = {
                     article.lastFetchedAt || null,
                     article.guid || null,
                     article.lang || null,
-                    article.author || null
+                    article.author || null,
+                    article.imageSource || null,
+                    article.imageAttribution || null,
+                    article.imageLicenseUrl || null,
+                    article.imagePrompt || null
                 ]
             });
         } catch (e) {
@@ -290,6 +299,10 @@ export const ArticleRepository = {
             author: row.author as string,
             fetchError: row.fetch_error as string,
             lastFetchedAt: row.last_fetched_at as string,
+            imageSource: row.image_source as string,
+            imageAttribution: row.image_attribution as string,
+            imageLicenseUrl: row.image_license_url as string,
+            imagePrompt: row.image_prompt as string,
         };
     }
 };
