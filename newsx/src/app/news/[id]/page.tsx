@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Share2, ExternalLink, Clock, User, ShieldCheck, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Share2, ExternalLink, Clock, User, ShieldCheck, Image as ImageIcon, Wand2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useSettings } from "@/components/providers/SettingsProvider";
 
@@ -143,6 +143,23 @@ export default function ArticleDetailPage() {
                         </div>
                     </div>
                 </div>
+
+                {/* Actions */}
+                <div className="absolute top-6 right-6 flex items-center gap-2 z-20">
+                    <button
+                        onClick={() => router.push(`/admin/studio/setup?source=${id}`)}
+                        className="p-2 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-lg"
+                        title="Create Social Post"
+                    >
+                        <Wand2 className="w-5 h-5" />
+                    </button>
+                    <button
+                        className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white hover:bg-black/40 transition-colors"
+                        title="Share"
+                    >
+                        <Share2 className="w-5 h-5" />
+                    </button>
+                </div>
             </div>
 
             {/* Main Content */}
@@ -189,7 +206,7 @@ export default function ArticleDetailPage() {
                 <div className="text-center text-gray-400 text-sm pb-10">
                     <p>ID: {article.id} • Fetched via {article.sourceId}</p>
                 </div>
-            </main>
-        </div>
+            </main >
+        </div >
     );
 }

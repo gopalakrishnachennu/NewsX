@@ -7,6 +7,7 @@ import type { Feed } from "@/types";
 import { logger } from "@/lib/logger";
 import { fetchWithRetry } from "@/lib/utils/retry";
 import { parseRelativeDate, extractUnixTimestampFromUrl } from "@/lib/utils/content-enrichment";
+import { getRandomUserAgent } from "@/lib/utils/user-agents";
 
 // Health monitoring constants
 const AUTO_DISABLE_THRESHOLD = 5;
@@ -438,7 +439,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         // ... fetch logic (Keep existing fetchWithRetry) ...
         // ... fetch logic (Keep existing fetchWithRetry) ...
         const headers: Record<string, string> = {
-            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "user-agent": getRandomUserAgent(),
             "accept": "application/rss+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5",
         };
 
@@ -618,8 +619,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             lastFetchedAt: now,
             ...(lastSeen ? { lastSeenArticleDate: lastSeen } : {}),
             lastContentHash: currentHash,
-            lastETag: response.headers.get("etag") || null,
-            lastModified: response.headers.get("last-modified") || null,
+            lastETag: response.headers.get("etag") || undefined,
+            lastModified: response.headers.get("last-modified") || undefined,
             recentHashes: Array.from(new Set([...processedHashes, ...(feed.recentHashes || [])])).slice(0, 200),
             health: {
                 ...feed.health,

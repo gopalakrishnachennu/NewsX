@@ -144,3 +144,25 @@ export async function initDB() {
     console.error("❌ Failed to init DB:", error);
   }
 }
+// Templates for the Studio
+db.execute(`
+  CREATE TABLE IF NOT EXISTS templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    type TEXT DEFAULT 'canvas', -- 'canvas' or 'video'
+    content TEXT NOT NULL, -- JSON string of Fabric/Remotion state
+    thumbnail TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+export interface Template {
+  id: string;
+  name: string;
+  type: 'canvas' | 'video';
+  content: string;
+  thumbnail?: string;
+  created_at: string;
+  updated_at: string;
+}

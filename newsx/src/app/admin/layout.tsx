@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Rss, ScrollText, Activity } from "lucide-react";
+import { LayoutDashboard, Rss, ScrollText, Activity, Wand2 } from "lucide-react";
 
 const NAV_ITEMS = [
     { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
     { href: "/admin/status", label: "System Status", icon: Activity },
+    { href: "/admin/studio", label: "Studio", icon: Wand2 },
+    { href: "/admin/templates", label: "Templates", icon: LayoutDashboard },
     { href: "/admin/feeds", label: "Feeds", icon: Rss },
     { href: "/admin/logs", label: "Logs", icon: ScrollText },
 ];

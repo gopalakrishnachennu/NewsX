@@ -25,7 +25,7 @@ const SORT_OPTIONS = [
     { id: "z-a", label: "Z → A", icon: SortDesc },
 ];
 
-const LIMIT_OPTIONS = [30, 50, 100, 200, 500, 1000, 2000];
+const LIMIT_OPTIONS = [30, 50, 100, 200, 500, 1000, 2000, 5000];
 
 export default function NewsPage() {
     const [articles, setArticles] = useState<NewsArticle[]>([]);

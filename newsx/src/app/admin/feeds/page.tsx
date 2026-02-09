@@ -223,13 +223,13 @@ export default function AdminFeedsPage() {
                             <input
                                 type="number"
                                 min={10}
-                                max={2000}
+                                max={5000}
                                 step={10}
                                 value={defaultNewsLimit}
                                 onChange={(e) => setDefaultNewsLimit(Number(e.target.value))}
                                 className="w-64 rounded-md border border-gray-300 px-3 py-2 text-sm"
                             />
-                            <p className="text-xs text-gray-500 mt-1">Max 2000 per page load.</p>
+                            <p className="text-xs text-gray-500 mt-1">Max 5000 per page load.</p>
                         </div>
                         <button
                             onClick={handleSaveSettings}

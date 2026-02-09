@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { RefreshCw, Loader2, CheckCircle, XCircle, Clock, Ban } from "lucide-react";
+import { RefreshCw, Loader2, CheckCircle, XCircle, Clock, Ban, Wand2, ExternalLink } from "lucide-react";
 
 type ArticleRow = {
     id: string;
@@ -147,6 +147,9 @@ export function RecentArticles() {
                                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">
                                     Quality
                                 </th>
+                                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">
+                                    Actions
+                                </th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200 bg-white">
@@ -193,6 +196,26 @@ export function RecentArticles() {
                                     </td>
                                     <td className="px-4 py-3 text-sm text-gray-500">
                                         {article.qualityScore ?? "-"}
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-gray-500">
+                                        <div className="flex items-center gap-2">
+                                            <a
+                                                href={`/admin/studio?source=${article.id}`}
+                                                className="p-1.5 bg-indigo-50 hover:bg-indigo-100 rounded text-indigo-600 hover:text-indigo-800 transition-colors"
+                                                title="Create Social Post"
+                                            >
+                                                <Wand2 className="h-4 w-4" />
+                                            </a>
+                                            <a
+                                                href={article.url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600 transition-colors"
+                                                title="View Source"
+                                            >
+                                                <ExternalLink className="h-4 w-4" />
+                                            </a>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}

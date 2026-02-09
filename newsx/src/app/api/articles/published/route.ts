@@ -14,7 +14,7 @@ export async function GET(request: Request) {
         // SQLite Migration: Read from local DB
         const { ArticleRepository } = await import("@/lib/repositories/articles");
         // Allow higher limits from UI (use pagination in UI for truly unlimited)
-        const safeLimit = Math.max(1, Math.min(limit, 2000));
+        const safeLimit = Math.max(1, Math.min(limit, 5000));
         const articles = await ArticleRepository.findPublished(safeLimit);
 
         // Return only the requested amount
